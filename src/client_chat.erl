@@ -8,8 +8,8 @@
 -export([login/0]).
 -export([logout/0]).
 -export([discovery/0]).
--export([getNameFromState/0]).
--export([message/2]).
+-export([messageSession/0]).
+-export([message/1]).
 
 %% gen_server.
 -export([init/1]).
@@ -44,15 +44,15 @@ start() ->
 	end.
 
 start_session() ->
-	io:format("~n===============================~n"),
-	io:format("   Options:~n"),
-	io:format("   1. Show online people~n"),
-	io:format("   2. Start IM with a person~n"),
-	io:format("   3. Logout"),
-	io:format("~n===============================~n"),
 	loop().
 
 loop() ->
+	io:format("===============================~n"),
+	io:format("   Options:~n"),
+	io:format("   1. Show online people~n"),
+	io:format("   2. Start IM with a person~n"),
+	io:format("   3. Logout~n"),
+	io:format("===============================~n"),
 	Option = getOption(),
 	case Option of
 		1 ->
@@ -68,7 +68,7 @@ loop() ->
 
 
 getOption() ->
-	Option = string:to_integer(string:strip(io:get_line("Enter option --> "), right, $\n)),
+	Option = string:to_integer(string:strip(io:get_line("\nEnter option --> "), right, $\n)),
 	case Option of
 		{Number, _} ->
 			%io:format("~p~n",[Term]);
@@ -82,7 +82,7 @@ login() ->
 	UserName = string:strip(io:get_line("Login As: "), right, $\n),						% Get input from client
 	 case gen_server:call(?MODULE, {login, UserName, client_pid()}) of
 	 	{success, Msg} ->
-	 		io:format("~p~n",[Msg]),
+	 		io:format("~n~p~n",[Msg]),
 	 		success;
 	 	{fail, Msg} ->
 	 		io:format("~p~n",[Msg]),
@@ -102,18 +102,40 @@ logout() ->
 			io:format("~n Some error occured while logging out")
 	end.
 
+messageSession() ->
+	OtherUser = string:strip(io:get_line("Whom do you want to chat with? : "), right, $\n),
+	Users = gen_server:call(?MODULE, discovery),
+	case maps:find(OtherUser,Users) of
+		{ok, _ } ->
+			io:format("~n=========================~n"),
+			io:format("   Starting chat with ~p~n",[OtherUser]),
+			io:format("   Type quit_quit to exit chat IM~n"),
+			message(OtherUser);
+		_ ->
+			io:format("Other user either offline or not available")
+	end.
+
+message(To) ->
+	Message = string:strip(io:get_line(" ]] You ---> "), right, $\n),
+	case Message of
+		"quit_quit" ->
+			io:format("~n=========================~n"),
+			io:format(" Stopping IM services ....."),
+			io:format("~n=========================~n");
+		_ ->
+			gen_server:cast({?SERVER,server_node()}, {message, To, getNameFromState(), Message}),
+			message(To)
+	end.
+
+
 discovery() ->
 	Reply = gen_server:call(?MODULE, discovery),
 	Number = maps:size(Reply),
-	io:format("There are ~p clients currently connected apart from you~n",[Number]),
+	io:format("~nThere are ~p clients currently connected apart from you~n",[Number]),
 	lists:foreach(fun({Key, _}) -> io:format("--> ~p~n", [Key]) end, maps:to_list(Reply)).
 
 getNameFromState() ->
 	gen_server:call(?MODULE, getName).
-
-message(To, Message) ->
-	io:format(" ]] You ---> ~p~n",[Message]),
-	gen_server:cast({?SERVER,server_node()}, {message, To, Message}).
 
 
 start_link() ->

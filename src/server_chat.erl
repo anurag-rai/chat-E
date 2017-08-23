@@ -2,7 +2,7 @@
 -behaviour(gen_server).
 
 %% API.
--export([start_link/0]).
+-export([start/0]).
 -export([discovery/0]).
 %% gen_server.
 -export([init/1]).
@@ -16,7 +16,7 @@
 
 
 %% API.
-start_link() ->
+start() ->
 	{ok, Pid} = gen_server:start_link({local, ?SERVER}, ?MODULE, [], []),
 	io:format(" >> Server initialized with PID: ~p~n", [Pid]).
 
@@ -63,8 +63,8 @@ handle_cast(discovery, State) ->
 	lists:foreach(fun({Key, Value}) -> io:format("(~p,~p)~n", [Key, Value]) end, maps:to_list(State)),
 	{noreply, State};
 
-handle_cast({message, From, Message}, State) ->
-	Pid = maps:get(From, State),
+handle_cast({message, To, From, Message}, State) ->
+	Pid = maps:get(To, State),		%Handle error when user has gone offline but message for it arrives
 	gen_server:cast(Pid, {message, From, Message}),
 	{noreply, State}.
 
