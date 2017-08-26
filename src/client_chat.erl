@@ -1,74 +1,109 @@
 -module(client_chat).
--behaviour(gen_server).
 
 %% API.
 -export([start/0]).
--export([start_session/0]).
--export([start_link/0]).
--export([login/0]).
--export([logout/0]).
--export([discovery/0]).
--export([messageSession/0]).
--export([message/1]).
+-export([client/3]).
 
-%% gen_server.
--export([init/1]).
--export([handle_call/3]).
--export([handle_cast/2]).
--export([handle_info/2]).
--export([terminate/2]).
--export([code_change/3]).
+-define(SERVER, server).
+-define(CLIENT, client).
 
--define(SERVER, chatty).
-
-%internal function
 server_node() ->
     chatServer@GGN000414.
 
-client_pid() ->
-	whereis(?MODULE).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%      API		%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-prettyPrintMsg(Name, Msg) ->
-	io:format(" ]] ~p ---> ~p~n",[Name,Msg]).
-
-%% API.
 start() ->
-	io:format(" >> Starting client services ... ~n"),
-	start_link(),
-	io:format(" >> Successfully registered client process ...~n~n"),
-	case login() of
-		success ->
-			start_session();
-		fail ->
-			login()
-	end.
-
-start_session() ->
+	io:format("~n  >>> Starting client services ... ~n"),
+	Pid = spawn_link(?MODULE, client, [getServerPid(), self(), []]),
+	register(?CLIENT, Pid),
+	process_flag(trap_exit, true),
+	login(),
+	welcomeMessage(),
+	displayOptions(),
 	loop().
 
+client(ServerPid, User, ClientState) ->
+	receive
+		% CLIENT MESSAGES
+		{login, UserName} -> 
+			ServerPid ! {login, UserName, self()},
+			client(ServerPid, User, [UserName]);
+		discovery ->
+			ServerPid ! {discovery, self()};
+		{messageTo, To, Message} ->
+			ServerPid ! {message, To, hd(ClientState), Message};
+		logout ->
+			ServerPid ! {logout, hd(ClientState)},
+			client(ServerPid, User, []);
+		terminate ->
+			exit(normal);
+		%SERVER MESSAGES
+		{loginSuccess, UserName, Msg} ->
+			User ! {loginDone,Msg},
+			client(ServerPid, User, [UserName]);
+		{loginFail, Msg} ->
+			User ! {loginFail, Msg};
+		{discovery, Record} ->
+			User ! {done, Record, hd(ClientState)};
+		{messageFrom, From, Message} ->
+			prettyPrintMsg(From, Message);
+		{messageError, To, Message} ->
+			io:format("User went offline ... Could not send ~p to ~p~n", [Message,To]);
+		_ ->
+			io:format("GOT IT!")
+	end,
+	client(ServerPid, User, ClientState).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%	   INTERNAL FUNCTIONS		%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+login() ->
+	io:format("~n[Enter /quit to stop all services]~n"),
+	UserName = string:strip(io:get_line("Login As: "), right, $\n),
+	case UserName of
+		"/quit" ->
+			terminate();
+		_ ->
+			?CLIENT ! {login, UserName},
+			receive
+				{loginDone, Msg} ->
+					io:format("~p~n",[Msg]);
+				{loginFail, Msg} ->
+					io:format("~p~n",[Msg]),
+					login();
+				_ ->
+					io:format("Unknown value")
+			after 5000 ->
+				io:format("Server is not responding ... "),
+				login()
+			end
+	end.
+
 loop() ->
-	io:format("===============================~n"),
-	io:format("   Options:~n"),
-	io:format("   1. Show online people~n"),
-	io:format("   2. Start IM with a person~n"),
-	io:format("   3. Logout~n"),
-	io:format("===============================~n"),
 	Option = getOption(),
 	case Option of
-		1 ->
-			discovery();
-		2 ->
-			messageSession();
-		3 ->
-			logout();
-		_ ->
-			io:format("Invalid Option ... GGWP")
+		1 -> displayOptions();
+		2 -> discovery();
+		3 -> messageSession();
+		4 -> logout();
+		_ -> io:format("Invalid Option ... GGWP")
 	end,
 	loop().
 
+displayOptions() ->
+	io:format("===============================~n"),
+	io:format("   Options:~n"),
+	io:format("   1. Display server options~n"),
+	io:format("   2. Show online people~n"),
+	io:format("   3. Start IM with a person~n"),
+	io:format("   4. Logout~n"),
+	io:format("===============================~n").
 
 getOption() ->
-	Option = string:to_integer(string:strip(io:get_line("\nEnter option --> "), right, $\n)),
+	Option = string:to_integer(string:strip(io:get_line("Enter option number --> "), right, $\n)),
 	case Option of
 		{Number, _} ->
 			%io:format("~p~n",[Term]);
@@ -78,117 +113,97 @@ getOption() ->
 			getOption()
 	end.
 
-login() ->
-	UserName = string:strip(io:get_line("Login As: "), right, $\n),						% Get input from client
-	 case gen_server:call(?MODULE, {login, UserName, client_pid()}) of
-	 	{success, Msg} ->
-	 		io:format("~n~p~n",[Msg]),
-	 		success;
-	 	{fail, Msg} ->
-	 		io:format("~p~n",[Msg]),
-	 		fail;
-	 	{ _, Msg} ->
-	 		io:format("~p~n",[Msg]),
-	 		fail
-	 end.
-
-logout() ->
-	Status = gen_server:call(?MODULE, {logout, getNameFromState()}),
-	case Status of
-		done ->
-			io:format("~n~n~n  Successfully logged out~n~n~n"),
-			login();
-		_ ->
-			io:format("~n Some error occured while logging out")
-	end.
+logout() ->	
+	?CLIENT ! logout,
+	io:format("~n~n~n  Successfully logged out~n~n~n"),
+	login().
 
 messageSession() ->
 	OtherUser = string:strip(io:get_line("Whom do you want to chat with? : "), right, $\n),
-	Users = gen_server:call(?MODULE, discovery),
-	case maps:find(OtherUser,Users) of
-		{ok, _ } ->
-			io:format("~n=========================~n"),
-			io:format("   Starting chat with ~p~n",[OtherUser]),
-			io:format("   Type quit_quit to exit chat IM~n"),
-			message(OtherUser);
+	?CLIENT ! discovery,
+	receive
+		{done, Record, UserName} ->
+			Others = maps:remove(UserName, Record),
+			case maps:find(OtherUser,Others) of
+				{ok, _ } ->
+					io:format("~n"),
+					io:format("===============================~n"),
+					io:format("   Starting chat with ~p~n",[OtherUser]),
+					io:format("   Type /quit to exit chat IM~n"),
+					io:format("===============================~n"),
+					message(OtherUser);
+				_ ->
+					io:format("  >>> Other user either offline or not available~n")
+			end;
 		_ ->
-			io:format("Other user either offline or not available")
+			io:format("Message: Cannot find list of online users ... ~n"),
+			loop()
+	after 5000	->
+		io:format("Message: Server unresponsive ... ~n"),
+		loop()
 	end.
 
 message(To) ->
 	Message = string:strip(io:get_line(" ]] You ---> "), right, $\n),
 	case Message of
-		"quit_quit" ->
-			io:format("~n=========================~n"),
-			io:format(" Stopping IM services ....."),
-			io:format("~n=========================~n");
+		"/quit" ->
+			io:format("===============================~n"),
+			io:format(" Stopping IM services .....~n"),
+			io:format("===============================~n");
 		_ ->
-			gen_server:cast({?SERVER,server_node()}, {message, To, getNameFromState(), Message}),
+			?CLIENT ! {messageTo, To, Message},
 			message(To)
 	end.
 
-
 discovery() ->
-	Reply = gen_server:call(?MODULE, discovery),
-	Number = maps:size(Reply),
+	?CLIENT ! discovery,
+	receive
+		{done, Record, UserName} ->
+			Others = maps:remove(UserName, Record),
+			displayDiscovery(Others);
+		_ ->
+			io:format("Discovery: Don't know what this is ... ~n")
+	after 5000	->
+		io:format("Discovery failed~n")
+	end.
+
+terminate() ->
+	quitMessage(),
+	?CLIENT ! terminate,
+	receive
+		{'EXIT', _Pid, normal} ->
+			exit(normal);
+		{'EXIT', _Pid, shutdown} ->
+			exit(normal);
+		{'EXIT', _Pid, _} ->
+			io:format("Not able to kill client service"),
+			exit(normal)
+	after 5000 ->
+			io:format("Tired of waiting ... killing self"),
+			exit(normal)
+	end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%	   HELPER FUNCTIONS	    	%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+getServerPid() -> {?SERVER, server_node()}.
+
+welcomeMessage() ->
+	io:format("~n~n"),
+	io:format("==============================~n"),
+	io:format("=========== WELCOME ==========~n"),
+	io:format("==============================~n~n").
+
+quitMessage() ->
+	io:format("~n~n"),
+	io:format("==============================~n"),
+	io:format("=========== BYE BYE ==========~n"),
+	io:format("==============================~n~n").
+
+prettyPrintMsg(Name, Msg) -> io:format(" ]] ~p ---> ~p~n",[Name,Msg]).
+
+displayDiscovery(Record) ->
+	Number = maps:size(Record),
 	io:format("~nThere are ~p clients currently connected apart from you~n",[Number]),
-	lists:foreach(fun({Key, _}) -> io:format("--> ~p~n", [Key]) end, maps:to_list(Reply)).
-
-getNameFromState() ->
-	gen_server:call(?MODULE, getName).
-
-
-start_link() ->
-	gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-
-%% gen_server.
-
-init([]) ->
-	{ok, []}.
-
-
-
-handle_call(getName, _From, State) ->
-	{reply, element(2, hd(State)), State};
-
-handle_call({login, UserName, Pid}, _From, State) ->
-	Reply = gen_server:call({?SERVER,server_node()}, {login, UserName, Pid}),		% Send login request to server
-	case Reply of
-		{loginSuccess, Message} ->
-			{reply, {success, Message}, [{loggedin, UserName} | State]};
-		{loginFail, Message} ->
-			{reply, {fail, Message}, State};
-		_ ->
-			{reply, {unknown, "Unknown login reply"}, State}
-	end;
-
-handle_call({logout, UserName}, _From, State) ->
-	Reply = gen_server:call({?SERVER,server_node()}, {logout, UserName}),
-	case Reply of
-		done ->
-			{reply, Reply, []};
-		_ ->
-			{reply, Reply, State}
-	end;
-	
-handle_call(discovery, _From, State) ->
-	Reply = gen_server:call({?SERVER,server_node()}, discovery),
-	NewReply = maps:remove(element(2,hd(State)), Reply),
-	{reply, NewReply, State}.
-
-
-handle_cast({message, From, Message}, State) ->
-%	io:format(" ]] ~p says: ~p~n",[From,Message]),
-	prettyPrintMsg(From,Message),
-	{noreply, State}.
-
-
-
-handle_info(_Info, State) ->
-	{noreply, State}.
-
-terminate(_Reason, _State) ->
-	ok.
-
-code_change(_OldVsn, State, _Extra) ->
-	{ok, State}.
+	lists:foreach(fun({Key, _}) -> io:format("--> ~p~n", [Key]) end, maps:to_list(Record)).
