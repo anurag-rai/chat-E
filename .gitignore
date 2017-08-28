@@ -1,2 +1,3 @@
 .DS_Store
+.erlang.mk
 ebin/
