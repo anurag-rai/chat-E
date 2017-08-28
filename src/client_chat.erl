@@ -34,6 +34,8 @@ client(ServerPid, User, ClientState) ->
 			ServerPid ! {discovery, self()};
 		{messageTo, To, Message} ->
 			ServerPid ! {message, To, hd(ClientState), Message};
+		{history, all, To} ->
+			ServerPid ! {history, all, To, hd(ClientState), self()};
 		logout ->
 			ServerPid ! {logout, hd(ClientState)},
 			client(ServerPid, User, []);
@@ -51,6 +53,8 @@ client(ServerPid, User, ClientState) ->
 			prettyPrintMsg(From, Message);
 		{messageError, To, Message} ->
 			io:format("User went offline ... Could not send ~p to ~p~n", [Message,To]);
+		{history, L} ->
+			User ! {hd(ClientState),L};
 		_ ->
 			io:format("GOT IT!")
 	end,
@@ -61,7 +65,7 @@ client(ServerPid, User, ClientState) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 login() ->
-	io:format("~n[Enter /quit to stop all services]~n"),
+	io:format("~n[[Enter /quit to stop all services]]~n"),
 	UserName = string:strip(io:get_line("Login As: "), right, $\n),
 	case UserName of
 		"/quit" ->
@@ -89,18 +93,9 @@ loop() ->
 		2 -> discovery();
 		3 -> messageSession();
 		4 -> logout();
-		_ -> io:format("Invalid Option ... GGWP")
+		_ -> io:format("Invalid choice ... Enter 1 to view options~n")
 	end,
 	loop().
-
-displayOptions() ->
-	io:format("===============================~n"),
-	io:format("   Options:~n"),
-	io:format("   1. Display server options~n"),
-	io:format("   2. Show online people~n"),
-	io:format("   3. Start IM with a person~n"),
-	io:format("   4. Logout~n"),
-	io:format("===============================~n").
 
 getOption() ->
 	Option = string:to_integer(string:strip(io:get_line("Enter option number --> "), right, $\n)),
@@ -115,7 +110,7 @@ getOption() ->
 
 logout() ->	
 	?CLIENT ! logout,
-	io:format("~n~n~n  Successfully logged out~n~n~n"),
+	io:format("~n~n  Successfully logged out~n~n"),
 	login().
 
 messageSession() ->
@@ -126,20 +121,20 @@ messageSession() ->
 			Others = maps:remove(UserName, Record),
 			case maps:find(OtherUser,Others) of
 				{ok, _ } ->
-					io:format("~n"),
-					io:format("===============================~n"),
+					io:format("=========================================~n"),
 					io:format("   Starting chat with ~p~n",[OtherUser]),
+					io:format("   Type /history to show previous chats~n"),
 					io:format("   Type /quit to exit chat IM~n"),
-					io:format("===============================~n"),
+					io:format("=========================================~n"),
 					message(OtherUser);
 				_ ->
-					io:format("  >>> Other user either offline or not available~n")
+					io:format("  >>> Other user either offline or not available~n~n")
 			end;
 		_ ->
-			io:format("Message: Cannot find list of online users ... ~n"),
+			io:format("ERROR ---> Message: Cannot find list of online users ... ~n~n"),
 			loop()
 	after 5000	->
-		io:format("Message: Server unresponsive ... ~n"),
+		io:format("ERROR ---> Message: Server unresponsive ... ~n~n"),
 		loop()
 	end.
 
@@ -147,9 +142,12 @@ message(To) ->
 	Message = string:strip(io:get_line(" ]] You ---> "), right, $\n),
 	case Message of
 		"/quit" ->
-			io:format("===============================~n"),
-			io:format(" Stopping IM services .....~n"),
-			io:format("===============================~n");
+			io:format("=========================================~n"),
+			io:format("   Stopping IM services .....~n"),
+			io:format("=========================================~n");
+		"/history" ->
+			getPastChats(To),
+			message(To);
 		_ ->
 			?CLIENT ! {messageTo, To, Message},
 			message(To)
@@ -165,6 +163,15 @@ discovery() ->
 			io:format("Discovery: Don't know what this is ... ~n")
 	after 5000	->
 		io:format("Discovery failed~n")
+	end.
+
+getPastChats(To) ->
+	?CLIENT ! {history, all, To},
+	receive
+		{Name, L} when is_list(L) ->
+			printPastChat(Name,L);
+		_ ->
+			io:format("  >>  Received unknown reply from Server for history query~n")
 	end.
 
 terminate() ->
@@ -190,20 +197,53 @@ terminate() ->
 getServerPid() -> {?SERVER, server_node()}.
 
 welcomeMessage() ->
-	io:format("~n~n"),
-	io:format("==============================~n"),
-	io:format("=========== WELCOME ==========~n"),
-	io:format("==============================~n~n").
+	io:format("~n"),
+	io:format("=========================================~n"),
+	io:format("==============   WELCOME   ==============~n"),
+	io:format("=========================================~n").
 
 quitMessage() ->
 	io:format("~n~n"),
-	io:format("==============================~n"),
-	io:format("=========== BYE BYE ==========~n"),
-	io:format("==============================~n~n").
+	io:format("=========================================~n"),
+	io:format("===============  BYE BYE  ===============~n"),
+	io:format("=========================================~n").
+
+displayOptions() ->
+	io:format("=========================================~n"),
+	io:format("   Options:~n"),
+	io:format("   1. Display server options~n"),
+	io:format("   2. Show online people~n"),
+	io:format("   3. Start IM with a person~n"),
+	io:format("   4. Logout~n"),
+	io:format("=========================================~n"),
+	io:format("~n").
 
 prettyPrintMsg(Name, Msg) -> io:format(" ]] ~p ---> ~p~n",[Name,Msg]).
 
 displayDiscovery(Record) ->
 	Number = maps:size(Record),
 	io:format("~nThere are ~p clients currently connected apart from you~n",[Number]),
-	lists:foreach(fun({Key, _}) -> io:format("--> ~p~n", [Key]) end, maps:to_list(Record)).
+	lists:foreach(fun({Key, _}) -> io:format("--> ~p~n", [Key]) end, maps:to_list(Record)),
+	io:format("~n").
+
+printPastChat(_Name, []) ->
+	io:format("===============================~n"),
+	io:format("=======  NO CHAT HISTORY  =====~n"),
+	io:format("===============================~n");
+
+printPastChat(Name, List) ->
+	Result = lists:reverse(List),
+	io:format("=======  PREVIOUS CHAT  =======~n"),
+
+	lists:foreach( fun(Record) ->
+						{Sender,Message} = Record,
+						case string:equal(Name, Sender) of
+							true ->
+								io:format(" ]] You ---> ~p~n",[Message]);
+							false ->
+								io:format(" ]] ~p ---> ~p~n",[Sender,Message])
+						end
+					end, Result
+				),
+
+	io:format("===============================~n").
