@@ -44,8 +44,8 @@ server() ->
 			logout(UserName);
 		{message, To, From, Message} ->
 			message(To, From, Message);
-		{history, all, To, From, Pid} ->
-			Pid ! getPastChats(To, From);
+		{history, Number, To, From, Pid} ->
+			Pid ! getPastChats(To, From, Number);
 		_ ->
 			io:format("Something else")
 	end,
@@ -152,8 +152,14 @@ deleteChatLogs() ->
 	databaseConnection:delete(),
 	startDatabase().
 
-getPastChats(User1, User2) ->
-	{history, databaseConnection:getPastChats(User1, User2)}.
+getPastChats(User1, User2, Number) ->
+	PastChats = databaseConnection:getPastChats(User1, User2),
+	case Number == all of 
+		true ->
+			{history, PastChats};
+		_ ->
+			{history, lists:sublist(PastChats,Number)}
+	end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%	   INTERNAL FUNCTIONS		%%%%%%%%%%%%

@@ -36,6 +36,8 @@ client(ServerPid, User, ClientState) ->
 			ServerPid ! {message, To, hd(ClientState), Message};
 		{history, all, To} ->
 			ServerPid ! {history, all, To, hd(ClientState), self()};
+		{history, Number, To} ->
+			ServerPid ! {history, Number, To, hd(ClientState), self()};
 		logout ->
 			ServerPid ! {logout, hd(ClientState)},
 			client(ServerPid, User, []);
@@ -126,6 +128,7 @@ messageSession() ->
 					io:format("   Type /history to show previous chats~n"),
 					io:format("   Type /quit to exit chat IM~n"),
 					io:format("=========================================~n"),
+					getPastChats(OtherUser, 5),
 					message(OtherUser);
 				_ ->
 					io:format("  >>> Other user either offline or not available~n~n")
@@ -146,7 +149,7 @@ message(To) ->
 			io:format("   Stopping IM services .....~n"),
 			io:format("=========================================~n");
 		"/history" ->
-			getPastChats(To),
+			getPastChats(To, all),
 			message(To);
 		_ ->
 			?CLIENT ! {messageTo, To, Message},
@@ -165,8 +168,13 @@ discovery() ->
 		io:format("Discovery failed~n")
 	end.
 
-getPastChats(To) ->
-	?CLIENT ! {history, all, To},
+getPastChats(To, Number) ->
+	case Number == all of
+		true ->
+			?CLIENT ! {history, all, To};
+		_ ->
+			?CLIENT ! {history, Number, To}
+	end,
 	receive
 		{Name, L} when is_list(L) ->
 			printPastChat(Name,L);
