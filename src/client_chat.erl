@@ -160,7 +160,7 @@ message(To) ->
 					case Value of
 						nomatch ->
 							getPastChats(To, all);
-						all ->
+						"all" ->
 							getPastChats(To, all);
 						_ ->
 							try
