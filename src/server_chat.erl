@@ -2,7 +2,8 @@
 -behaviour(gen_server).
 
 %% API.
--export([start/0]).
+-export([startGenServer/0]).
+-export([startServerProcess/0]).
 -export([server/0]).
 
 -export([login/2]).
@@ -27,12 +28,18 @@
 -define(GENSERVER, gen_chatty).
 -define(SERVER, server).
 
-start() ->
+startGenServer() ->
 	welcomeMessage(),
-	_ServerPid = start_link(),
-	register(?SERVER, spawn_link(?MODULE, server, [])),
+	ServerPid = start_link(),
 	startDatabase(),
-	lists:flatten(" ]] Server initialized with PID: " ++ pid_to_list(_ServerPid)).
+	io:format(" ]] Gen-server initialized with PID: ~p~n",[ServerPid]),
+	{ok, ServerPid}.
+
+startServerProcess() -> 
+	Pid = spawn_link(?MODULE, server, []),
+	register(?SERVER, Pid),
+	io:format(" ]] Server-process initialized with PID: ~p~n",[Pid]),
+	{ok, Pid}.
 
 server() ->
 	receive
@@ -46,6 +53,9 @@ server() ->
 			message(To, From, Message);
 		{history, Number, To, From, Pid} ->
 			Pid ! getPastChats(To, From, Number);
+		{crash, X} ->
+			A = 5/X,
+			io:format("~p~n",[A]);
 		_ ->
 			io:format("Something else")
 	end,
@@ -101,8 +111,10 @@ handle_call({login, UserName, Pid}, _From, State) ->
 	end;
 
 handle_call(discovery, _From, State) ->
-	{reply, {discovery, State}, State}.
+	{reply, {discovery, State}, State};
 
+handle_call({crash,X}, _From, State) ->
+	{reply, 5/X, State}.
 
 handle_cast({logout, UserName}, State) ->
 	{noreply, maps:remove(UserName, State)};
