@@ -148,11 +148,28 @@ message(To) ->
 			io:format("=========================================~n"),
 			io:format("   Stopping IM services .....~n"),
 			io:format("=========================================~n");
-		"/history" ->
-			getPastChats(To, all),
-			message(To);
 		_ ->
-			?CLIENT ! {messageTo, To, Message},
+			Suffix = string:prefix(Message,"/history"),
+			case Suffix of
+				nomatch ->
+					?CLIENT ! {messageTo, To, Message};
+				_ ->
+					Value = string:prefix(Suffix," "),
+					case Value of
+						nomatch ->
+							getPastChats(To, all);
+						all ->
+							getPastChats(To, all);
+						_ ->
+							try
+								Number = list_to_integer(Value),
+								getPastChats(To, Number)
+							catch
+								error:badarg ->
+									io:format("  >>  Unable to parse ~p as a number~n",[Value])
+							end
+					end
+			end,
 			message(To)
 	end.
 
@@ -180,6 +197,8 @@ getPastChats(To, Number) ->
 			printPastChat(Name,L);
 		_ ->
 			io:format("  >>  Received unknown reply from Server for history query~n")
+	after 5000 ->
+		io:format("  >>  Server is not responding ... cannot fetch past chats~n")
 	end.
 
 terminate() ->
@@ -235,13 +254,13 @@ displayDiscovery(Record) ->
 	io:format("~n").
 
 printPastChat(_Name, []) ->
-	io:format("===============================~n"),
-	io:format("=======  NO CHAT HISTORY  =====~n"),
-	io:format("===============================~n");
+	io:format("=========================================~n"),
+	io:format("============  NO CHAT HISTORY  ==========~n"),
+	io:format("=========================================~n");
 
 printPastChat(Name, List) ->
 	Result = lists:reverse(List),
-	io:format("=======  PREVIOUS CHAT  =======~n"),
+	io:format("============  PREVIOUS CHAT  ============~n"),
 
 	lists:foreach( fun(Record) ->
 						{Sender,Message} = Record,
@@ -254,4 +273,4 @@ printPastChat(Name, List) ->
 					end, Result
 				),
 
-	io:format("===============================~n").
+	io:format("=========================================~n").
