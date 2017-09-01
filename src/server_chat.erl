@@ -83,7 +83,6 @@ message(To, From, Message) ->
 	logMessage(To, From, Message),
 	gen_server:cast(?GENSERVER, {message, To, From, Message}).
 
-
 start_link() ->
 	{ok, Pid} = gen_server:start_link({local, ?GENSERVER}, ?MODULE, [], []),
 	Pid.

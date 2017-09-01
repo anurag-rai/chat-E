@@ -10,7 +10,13 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Specify a list of all unit test functions
-all() -> [blackBox_testLogin, blackBox_testDiscovery, blackBox_testLogout, whiteBox_testLogin, whiteBox_testDiscovery, whiteBox_testLogout].
+all() -> [	blackBox_testLogin, 
+			blackBox_testDiscovery, 
+			blackBox_testLogout, 
+			blackBox_testMessage,
+			whiteBox_testLogin, 
+			whiteBox_testDiscovery, 
+			whiteBox_testLogout].
 
 init_per_suite(Config) ->
 	{ok, Pid} = server_chat:startGenServer(),	
@@ -102,6 +108,29 @@ blackBox_testLogout(Config) ->
 	server_chat:logout(UserOne_name),
 	{discovery, State3} = server_chat:discovery().
 
+blackBox_testMessage(Config) ->
+	{ok, _Pid} = server_chat:startGenServer(),
+	{UserOne_name, _} = ?config(userOne,Config),
+	{UserTwo_name, _} = ?config(userTwo,Config),
+
+	UserOne_Pid = spawn(?MODULE, dummyProcess, [self()]),
+	register(dummyOne, UserOne_Pid),
+	UserTwo_Pid = spawn(?MODULE, dummyProcess, [self()]),
+	register(dummyTwo, UserTwo_Pid),
+
+	server_chat:login(UserOne_name, UserOne_Pid),
+	server_chat:login(UserTwo_name, UserTwo_Pid),
+
+	server_chat:message(UserOne_name, UserTwo_name, "hello hello"),
+	receive
+		UserTwo_name ->
+			ok;
+		_ ->
+			1 = 2
+	after 4000 ->
+		1 = 2
+	end.
+
 whiteBox_testLogin(Config) -> 
 	{_Pid, State} = ?config(server,Config),
 	{UserOne_name, UserOne_Pid} = ?config(userOne,Config),
@@ -180,6 +209,17 @@ whiteBox_testLogout(Config) ->
 	%% Try to logout first user again
 	{noreply, State} = server_chat:handle_cast({logout, UserOne_name}, NewState1).
 
+dummyProcess(ControllerPID) ->
+	receive
+		{messageFrom, From, "hello hello"} ->
+			io:format(">>>~p~n",[From]),
+			ControllerPID ! From;
+		_ ->
+			ControllerPID ! nope
+	after 3000 ->
+		ControllerPID ! nope
+	end,
+	exit(normal).
 
 getRandomPid() ->
 	erlang:phash2({node(), erlang:timestamp()}).
