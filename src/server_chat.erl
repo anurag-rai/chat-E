@@ -117,8 +117,13 @@ handle_call({crash,X}, _From, State) ->
 	{reply, 5/X, State}.
 
 handle_cast({logout, UserName}, State) ->
-	{noreply, maps:remove(UserName, State)};
-
+	case maps:is_key(UserName, State) of
+		true ->
+			{noreply, maps:remove(UserName, State)};
+		_ ->
+			{noreply, State}
+	end;
+	
 handle_cast({message, To, From, Message}, State) ->
 	case maps:find(To, State) of
 		{ok, PidTo} ->
