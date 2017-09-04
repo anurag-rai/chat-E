@@ -209,6 +209,12 @@ whiteBox_testLogout(Config) ->
 	%% Try to logout first user again
 	{noreply, State} = server_chat:handle_cast({logout, UserOne_name}, NewState1).
 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%% HELPER FUNCTIONS %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
 dummyProcess(ControllerPID) ->
 	receive
 		{messageFrom, From, "hello hello"} ->
